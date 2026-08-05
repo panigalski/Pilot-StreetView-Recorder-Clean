@@ -18,6 +18,9 @@ REQUIRED = [
     'app/src/main/java/com/panigalski/pilotstreetview/StorageSelectionDialog.java',
     'app/src/main/java/com/panigalski/pilotstreetview/StorageResolver.java',
     'app/src/main/java/com/panigalski/pilotstreetview/SegmentedStreetViewRecorder.java',
+    'app/src/main/res/raw/start_recording.wav',
+    'app/src/main/res/raw/recording_stop_cue.wav',
+    'app/src/main/res/mipmap-xxxhdpi/ic_launcher.png',
     'pano/build.gradle',
     'pano/src/main/AndroidManifest.xml',
     'pano/src/main/java/com/pi/pano/PilotSDK.java',
@@ -43,6 +46,9 @@ if 'startActivity(new Intent' in main_source:
     sys.exit(1)
 if 'StorageSelectionDialog.show' not in main_source:
     print('In-place storage selector hook is missing.')
+    sys.exit(1)
+if 'PictureAdjustmentsDialog.show' not in main_source:
+    print('Direct picture-adjustment button hook is missing.')
     sys.exit(1)
 
 camera_source = (ROOT / 'pano/src/main/java/com/pi/pano/CameraSurfaceView.java').read_text(encoding='utf-8')
