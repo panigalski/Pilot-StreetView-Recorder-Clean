@@ -80,4 +80,5 @@
     <string name="picture_adjustments_applied">Picture adjustments applied</string>
     <string name="picture_defaults_restored">Picture defaults restored</string>
     <string name="picture_apply_failed">Unable to apply picture settings</string>
+    <string name="pro_badge">Pro</string>
 </resources>
