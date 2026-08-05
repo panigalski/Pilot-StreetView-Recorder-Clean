@@ -81,13 +81,15 @@
                 android:shadowColor="#DD000000"
                 android:shadowDx="0"
                 android:shadowDy="2"
-                android:shadowRadius="3" />
+                android:shadowRadius="3"
+                android:visibility="gone" />
 
             <View
                 android:layout_width="70dp"
                 android:layout_height="4dp"
                 android:layout_marginTop="5dp"
-                android:background="@color/pilot_text_primary" />
+                android:background="@color/pilot_text_primary"
+                android:visibility="gone" />
 
             <RelativeLayout
                 android:layout_width="match_parent"

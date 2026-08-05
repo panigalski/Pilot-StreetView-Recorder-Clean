@@ -10,7 +10,7 @@
     <string name="start_recording">REC</string>
     <string name="stop_recording">STOP</string>
     <string name="preview_initializing">Initializing 8K Street View preview…</string>
-    <string name="preview_ready">Preview ready</string>
+    <string name="preview_ready">Preview Ready</string>
     <string name="permissions_required">Camera and storage permissions are required.</string>
     <string name="gps_waiting">GPS waiting</string>
     <string name="gps_ready">GPS %.5f, %.5f</string>

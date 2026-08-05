@@ -9,6 +9,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.location.GpsSatellite;
 import android.location.GpsStatus;
+import android.media.MediaPlayer;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -37,6 +38,7 @@ public final class MainActivity extends Activity
     private static final long GPS_MAX_FIX_AGE_MS = 10_000L;
     private static final float GPS_MAX_ACCURACY_METERS = 25F;
     private static final int GPS_MIN_SATELLITES_USED = 4;
+    private static final long PREVIEW_READY_DISPLAY_MS = 5_000L;
 
     private final String[] requestedPermissions = new String[]{
             Manifest.permission.CAMERA,
@@ -71,6 +73,18 @@ public final class MainActivity extends Activity
             uiHandler.postDelayed(this, 2000L);
         }
     };
+    private final Runnable hidePreviewReadyStatus = new Runnable() {
+        @Override
+        public void run() {
+            if (statusText == null || !previewReady
+                    || (recorder != null && recorder.isRecording())) {
+                return;
+            }
+            if (getString(R.string.preview_ready).contentEquals(statusText.getText())) {
+                statusText.setVisibility(View.GONE);
+            }
+        }
+    };
 
     private FrameLayout previewContainer;
     private TextView statusText;
@@ -101,6 +115,7 @@ public final class MainActivity extends Activity
     private long latestGpsFixReceivedAt;
     private int gpsSatellitesVisible;
     private int gpsSatellitesUsed;
+    private MediaPlayer startRecordingPlayer;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -119,7 +134,7 @@ public final class MainActivity extends Activity
         settingsButton = findViewById(R.id.settings_button);
         galleryButton = findViewById(R.id.gallery_button);
 
-        statusBar = new PilotStatusBarController(this, getString(R.string.screen_title));
+        statusBar = new PilotStatusBarController(this, "");
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         recorder = new SegmentedStreetViewRecorder(this);
 
@@ -181,7 +196,7 @@ public final class MainActivity extends Activity
                 == PackageManager.PERMISSION_GRANTED) {
             initializeCameraAndLocation();
         } else if (cameraReleaseInProgress) {
-            statusText.setText("Releasing camera...");
+            showStatus("Releasing camera...");
             recordButton.setEnabled(false);
         }
     }
@@ -192,6 +207,8 @@ public final class MainActivity extends Activity
         destinationScanGeneration++;
         uiHandler.removeCallbacks(recordingClock);
         uiHandler.removeCallbacks(gpsUiRefresh);
+        uiHandler.removeCallbacks(hidePreviewReadyStatus);
+        releaseStartRecordingSound();
         statusBar.stop();
         stopLocationUpdates();
         beginCameraReleaseForBackground();
@@ -216,7 +233,7 @@ public final class MainActivity extends Activity
         }
 
         cameraReleaseInProgress = true;
-        statusText.setText("Releasing camera...");
+        showStatus("Releasing camera...");
 
         if (recorder != null && recorder.isRecording()) {
             new Thread(new Runnable() {
@@ -274,7 +291,7 @@ public final class MainActivity extends Activity
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED
                 || checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
                 != PackageManager.PERMISSION_GRANTED) {
-            statusText.setText(R.string.permissions_required);
+            showStatus(R.string.permissions_required);
             return;
         }
         initializeCameraAndLocation();
@@ -286,7 +303,7 @@ public final class MainActivity extends Activity
         }
         initialized = true;
         startLocationUpdates();
-        statusText.setText(R.string.preview_initializing);
+        showStatus(R.string.preview_initializing);
 
         pilotSDK = PreviewHelper.initPanoView(previewContainer, new PanoSDKListener() {
             @Override
@@ -309,7 +326,7 @@ public final class MainActivity extends Activity
                             return;
                         }
                         recordButton.setEnabled(false);
-                        statusText.setText("Preview released");
+                        showStatus("Preview released");
                         if (activityResumed) {
                             uiHandler.postDelayed(new Runnable() {
                                 @Override
@@ -349,7 +366,7 @@ public final class MainActivity extends Activity
                                     return;
                                 }
                                 previewReady = true;
-                                statusText.setText(R.string.preview_ready);
+                                showPreviewReadyTemporarily();
                                 recordButton.setEnabled(!destinationCheckInProgress);
                             }
                         });
@@ -395,7 +412,7 @@ public final class MainActivity extends Activity
                     + getString(R.string.storage_selected));
         pathText.setText("");
         if (previewReady) {
-            statusText.setText(R.string.preview_ready);
+            showPreviewReadyTemporarily();
         }
         recordButton.setEnabled(previewReady);
     }
@@ -421,7 +438,7 @@ public final class MainActivity extends Activity
                 : getString(R.string.storage_checking));
         pathText.setText("");
         if (previewReady) {
-            statusText.setText(R.string.storage_checking_short);
+            showStatus(R.string.storage_checking_short);
         }
 
         new Thread(new Runnable() {
@@ -461,9 +478,11 @@ public final class MainActivity extends Activity
                     + StorageResolver.formatBytes(destination.freeBytes));
             pathText.setText(destination.directory.getAbsolutePath());
             if (!recorder.isRecording()) {
-                statusText.setText(previewReady
-                        ? getString(R.string.preview_ready)
-                        : getString(R.string.preview_initializing));
+                if (previewReady) {
+                    showPreviewReadyTemporarily();
+                } else {
+                    showStatus(R.string.preview_initializing);
+                }
             }
         } else {
             destinationButton.setText(StorageResolver.MODE_EXTERNAL.equals(mode)
@@ -471,10 +490,68 @@ public final class MainActivity extends Activity
                     : getString(R.string.destination_internal) + " • unavailable");
             pathText.setText(errorMessage == null
                     ? getString(R.string.storage_unavailable) : errorMessage);
-            statusText.setText("Destination unavailable");
+            showStatus("Destination unavailable");
         }
         recordButton.setEnabled(previewReady && !destinationCheckInProgress
                 && !recorder.isRecording());
+    }
+
+    private void showStatus(int stringResId) {
+        showStatus(getString(stringResId));
+    }
+
+    private void showStatus(CharSequence message) {
+        uiHandler.removeCallbacks(hidePreviewReadyStatus);
+        statusText.setVisibility(View.VISIBLE);
+        statusText.setText(message);
+    }
+
+    private void showPreviewReadyTemporarily() {
+        showStatus(R.string.preview_ready);
+        uiHandler.postDelayed(hidePreviewReadyStatus, PREVIEW_READY_DISPLAY_MS);
+    }
+
+    private void playStartRecordingSound() {
+        releaseStartRecordingSound();
+        MediaPlayer player = MediaPlayer.create(this, R.raw.start_recording);
+        if (player == null) {
+            return;
+        }
+        startRecordingPlayer = player;
+        player.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+            @Override
+            public void onCompletion(MediaPlayer mediaPlayer) {
+                if (startRecordingPlayer == mediaPlayer) {
+                    startRecordingPlayer = null;
+                }
+                mediaPlayer.release();
+            }
+        });
+        player.setOnErrorListener(new MediaPlayer.OnErrorListener() {
+            @Override
+            public boolean onError(MediaPlayer mediaPlayer, int what, int extra) {
+                if (startRecordingPlayer == mediaPlayer) {
+                    startRecordingPlayer = null;
+                }
+                mediaPlayer.release();
+                return true;
+            }
+        });
+        player.start();
+    }
+
+    private void releaseStartRecordingSound() {
+        MediaPlayer player = startRecordingPlayer;
+        startRecordingPlayer = null;
+        if (player == null) {
+            return;
+        }
+        try {
+            player.stop();
+        } catch (IllegalStateException ignored) {
+            // Playback had already completed or had not started.
+        }
+        player.release();
     }
 
     private void toggleRecording() {
@@ -492,7 +569,7 @@ public final class MainActivity extends Activity
         }
         String gpsProblem = getGpsReadinessProblem();
         if (gpsProblem != null) {
-            statusText.setText(R.string.gps_required_short);
+            showStatus(R.string.gps_required_short);
             new AlertDialog.Builder(this)
                     .setTitle(R.string.gps_required_title)
                     .setMessage(gpsProblem)
@@ -511,7 +588,7 @@ public final class MainActivity extends Activity
         recordButton.setEnabled(false);
         destinationButton.setEnabled(false);
         settingsButton.setEnabled(false);
-        statusText.setText(R.string.storage_checking_short);
+        showStatus(R.string.storage_checking_short);
 
         new Thread(new Runnable() {
             @Override
@@ -564,7 +641,7 @@ public final class MainActivity extends Activity
             destinationButton.setEnabled(true);
             settingsButton.setEnabled(true);
             recordButton.setEnabled(previewReady && !destinationCheckInProgress);
-            statusText.setText(R.string.gps_required_short);
+            showStatus(R.string.gps_required_short);
             new AlertDialog.Builder(this)
                     .setTitle(R.string.gps_required_title)
                     .setMessage(gpsProblem)
@@ -599,6 +676,8 @@ public final class MainActivity extends Activity
         recordButton.setEnabled(previewReady && !destinationCheckInProgress);
         destinationButton.setEnabled(true);
         settingsButton.setEnabled(true);
+        gpsText.setVisibility(View.VISIBLE);
+        updateGpsUi();
     }
 
     private void startLocationUpdates() {
@@ -694,6 +773,9 @@ public final class MainActivity extends Activity
     }
 
     private void updateGpsUi() {
+        if (recorder != null && recorder.isRecording()) {
+            return;
+        }
         String problem = getGpsReadinessProblem();
         if (problem == null && latestGpsLocation != null) {
             gpsText.setText(getString(R.string.gps_ready_quality,
@@ -789,25 +871,29 @@ public final class MainActivity extends Activity
         recordButton.setEnabled(true);
         destinationButton.setEnabled(false);
         pathText.setText(path);
-        statusText.setText("Recording part " + partNumber);
+        gpsText.setVisibility(View.GONE);
+        if (partNumber == 1) {
+            playStartRecordingSound();
+        }
+        showStatus("Recording part " + partNumber);
     }
 
     @Override
     public void onRecordingStopped(List<String> completedFiles) {
         resetRecordingUi();
-        statusText.setText("Stopped • " + completedFiles.size() + " file(s) saved");
+        showStatus("Stopped • " + completedFiles.size() + " file(s) saved");
         showSelectedModeWithoutDiskProbe();
     }
 
     @Override
     public void onStatus(String message) {
-        statusText.setText(message);
+        showStatus(message);
     }
 
     @Override
     public void onError(String message) {
         resetRecordingUi();
-        statusText.setText(message);
+        showStatus(message);
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
     }
 
@@ -816,6 +902,8 @@ public final class MainActivity extends Activity
         activityResumed = false;
         uiHandler.removeCallbacks(recordingClock);
         uiHandler.removeCallbacks(gpsUiRefresh);
+        uiHandler.removeCallbacks(hidePreviewReadyStatus);
+        releaseStartRecordingSound();
         stopLocationUpdates();
         beginCameraReleaseForBackground();
         super.onDestroy();
