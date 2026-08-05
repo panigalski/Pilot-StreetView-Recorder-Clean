@@ -10,8 +10,8 @@ android {
         applicationId 'com.panigalski.pilotstreetview'
         minSdk 24
         targetSdk 29
-        versionCode 109
-        versionName '1.8.1-stop-cue-resource-fix'
+        versionCode 111
+        versionName '1.9.0-portrait-control-deck'
 
         ndk {
             abiFilters 'arm64-v8a'

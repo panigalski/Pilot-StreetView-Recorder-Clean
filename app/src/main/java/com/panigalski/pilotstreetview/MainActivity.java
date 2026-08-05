@@ -91,11 +91,12 @@ public final class MainActivity extends Activity
     private TextView gpsText;
     private TextView pathText;
     private TextView destinationButton;
+    private TextView pictureValue;
     private TextView recordCaption;
     private TextView recordTime;
     private ImageButton recordButton;
-    private ImageButton settingsButton;
-    private ImageButton galleryButton;
+    private View pictureButton;
+    private View storageButton;
 
     private PilotStatusBarController statusBar;
     private LocationManager locationManager;
@@ -130,17 +131,18 @@ public final class MainActivity extends Activity
         gpsText = findViewById(R.id.gps_text);
         pathText = findViewById(R.id.path_text);
         destinationButton = findViewById(R.id.destination_button);
+        pictureValue = findViewById(R.id.picture_value);
         recordCaption = findViewById(R.id.record_caption);
         recordTime = findViewById(R.id.record_time);
         recordButton = findViewById(R.id.record_button);
-        settingsButton = findViewById(R.id.settings_button);
-        galleryButton = findViewById(R.id.gallery_button);
+        pictureButton = findViewById(R.id.picture_button);
+        storageButton = findViewById(R.id.storage_button);
 
         statusBar = new PilotStatusBarController(this, "");
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
         recorder = new SegmentedStreetViewRecorder(this);
 
-        destinationButton.setOnClickListener(new View.OnClickListener() {
+        storageButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 showStorageSelection();
@@ -152,35 +154,27 @@ public final class MainActivity extends Activity
                 toggleRecording();
             }
         });
-        settingsButton.setOnClickListener(new View.OnClickListener() {
+        pictureButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 if (recorder.isRecording()) {
                     Toast.makeText(MainActivity.this,
-                            "Stop recording before opening settings.",
+                            "Stop recording before changing picture settings.",
                             Toast.LENGTH_SHORT).show();
                     return;
                 }
-                SettingsDialog.show(MainActivity.this, new SettingsDialog.Listener() {
-                    @Override
-                    public void onDestinationChanged(String mode) {
-                        showSelectedModeWithoutDiskProbe();
-                    }
-
-                    @Override
-                    public void onPictureAdjustmentsChanged() {
-                        showStatus(R.string.picture_adjustments_applied);
-                    }
-                });
-            }
-        });
-        galleryButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Toast.makeText(MainActivity.this, R.string.gallery_not_ready, Toast.LENGTH_SHORT).show();
+                PictureAdjustmentsDialog.show(MainActivity.this,
+                        new PictureAdjustmentsDialog.Listener() {
+                            @Override
+                            public void onPictureAdjustmentsChanged() {
+                                updatePictureSummary();
+                                showStatus(R.string.picture_adjustments_applied);
+                            }
+                        });
             }
         });
 
+        updatePictureSummary();
         showSelectedModeWithoutDiskProbe();
         requestPermissionsAndInitialize();
     }
@@ -192,6 +186,7 @@ public final class MainActivity extends Activity
         UiChrome.apply(this);
         statusBar.start();
         showSelectedModeWithoutDiskProbe();
+        updatePictureSummary();
         startLocationUpdates();
         uiHandler.removeCallbacks(gpsUiRefresh);
         uiHandler.post(gpsUiRefresh);
@@ -397,6 +392,16 @@ public final class MainActivity extends Activity
      * performs a synchronous native release from surfaceDestroyed(), which can
      * block Pilot OS. A dialog keeps the preview Surface alive.
      */
+    private void updatePictureSummary() {
+        if (pictureValue == null) {
+            return;
+        }
+        String iso = PictureAdjustments.isoLabel(RecorderPreferences.getIso(this));
+        String ev = PictureAdjustments.evLabel(
+                RecorderPreferences.getExposureCompensation(this));
+        pictureValue.setText(ev + " • " + iso);
+    }
+
     private void showStorageSelection() {
         if (recorder != null && recorder.isRecording()) {
             Toast.makeText(this, "Stop recording before changing storage.", Toast.LENGTH_SHORT).show();
@@ -423,10 +428,8 @@ public final class MainActivity extends Activity
         selectedDestination = null;
         String mode = RecorderPreferences.getDestinationMode(this);
         destinationButton.setText(StorageResolver.MODE_EXTERNAL.equals(mode)
-                ? getString(R.string.destination_external) + " • "
-                    + getString(R.string.storage_selected)
-                : getString(R.string.destination_internal) + " • "
-                    + getString(R.string.storage_selected));
+                ? getString(R.string.destination_external_short)
+                : getString(R.string.destination_internal_short));
         pathText.setText("");
         if (previewReady) {
             showPreviewReadyTemporarily();
@@ -450,9 +453,7 @@ public final class MainActivity extends Activity
         destinationCheckInProgress = true;
         selectedDestination = null;
         recordButton.setEnabled(false);
-        destinationButton.setText(StorageResolver.MODE_EXTERNAL.equals(mode)
-                ? getString(R.string.storage_checking_external)
-                : getString(R.string.storage_checking));
+        destinationButton.setText(getString(R.string.storage_checking_short));
         pathText.setText("");
         if (previewReady) {
             showStatus(R.string.storage_checking_short);
@@ -491,8 +492,9 @@ public final class MainActivity extends Activity
                                         String errorMessage) {
         selectedDestination = destination;
         if (destination != null) {
-            destinationButton.setText(destination.label + " • "
-                    + StorageResolver.formatBytes(destination.freeBytes));
+            destinationButton.setText(StorageResolver.MODE_EXTERNAL.equals(mode)
+                    ? getString(R.string.destination_external_short)
+                    : getString(R.string.destination_internal_short));
             pathText.setText(destination.directory.getAbsolutePath());
             if (!recorder.isRecording()) {
                 if (previewReady) {
@@ -503,8 +505,8 @@ public final class MainActivity extends Activity
             }
         } else {
             destinationButton.setText(StorageResolver.MODE_EXTERNAL.equals(mode)
-                    ? getString(R.string.destination_external) + " • unavailable"
-                    : getString(R.string.destination_internal) + " • unavailable");
+                    ? getString(R.string.destination_external_short) + " • unavailable"
+                    : getString(R.string.destination_internal_short) + " • unavailable");
             pathText.setText(errorMessage == null
                     ? getString(R.string.storage_unavailable) : errorMessage);
             showStatus("Destination unavailable");
@@ -648,8 +650,8 @@ public final class MainActivity extends Activity
         final String mode = RecorderPreferences.getDestinationMode(this);
         destinationCheckInProgress = true;
         recordButton.setEnabled(false);
-        destinationButton.setEnabled(false);
-        settingsButton.setEnabled(false);
+        storageButton.setEnabled(false);
+        pictureButton.setEnabled(false);
         showStatus(R.string.storage_checking_short);
 
         new Thread(new Runnable() {
@@ -673,8 +675,8 @@ public final class MainActivity extends Activity
                             return;
                         }
                         destinationCheckInProgress = false;
-                        destinationButton.setEnabled(true);
-                        settingsButton.setEnabled(true);
+                        storageButton.setEnabled(true);
+                        pictureButton.setEnabled(true);
 
                         if (finalResult == null) {
                             applyDestinationResult(mode, null, finalErrorMessage);
@@ -687,8 +689,9 @@ public final class MainActivity extends Activity
                         }
 
                         selectedDestination = finalResult;
-                        destinationButton.setText(finalResult.label + " • "
-                                + StorageResolver.formatBytes(finalResult.freeBytes));
+                        destinationButton.setText(StorageResolver.MODE_EXTERNAL.equals(mode)
+                                ? getString(R.string.destination_external_short)
+                                : getString(R.string.destination_internal_short));
                         pathText.setText(finalResult.directory.getAbsolutePath());
                         continueStartAfterStorageValidation();
                     }
@@ -700,8 +703,8 @@ public final class MainActivity extends Activity
     private void continueStartAfterStorageValidation() {
         String gpsProblem = getGpsReadinessProblem();
         if (gpsProblem != null) {
-            destinationButton.setEnabled(true);
-            settingsButton.setEnabled(true);
+            storageButton.setEnabled(true);
+            pictureButton.setEnabled(true);
             recordButton.setEnabled(previewReady && !destinationCheckInProgress);
             showStatus(R.string.gps_required_short);
             new AlertDialog.Builder(this)
@@ -715,8 +718,8 @@ public final class MainActivity extends Activity
     }
 
     private void startRecordingNow() {
-        destinationButton.setEnabled(false);
-        settingsButton.setEnabled(false);
+        storageButton.setEnabled(false);
+        pictureButton.setEnabled(false);
         recordButton.setEnabled(true);
         recordButton.setBackgroundResource(R.drawable.record_button_active);
         recordCaption.setText(R.string.stop_recording);
@@ -736,8 +739,8 @@ public final class MainActivity extends Activity
         recordButton.setBackgroundResource(R.drawable.record_button_idle);
         recordCaption.setText(R.string.start_recording);
         recordButton.setEnabled(previewReady && !destinationCheckInProgress);
-        destinationButton.setEnabled(true);
-        settingsButton.setEnabled(true);
+        storageButton.setEnabled(true);
+        pictureButton.setEnabled(true);
         gpsText.setVisibility(View.VISIBLE);
         updateGpsUi();
     }
@@ -931,7 +934,8 @@ public final class MainActivity extends Activity
         recordButton.setBackgroundResource(R.drawable.record_button_active);
         recordCaption.setText(R.string.stop_recording);
         recordButton.setEnabled(true);
-        destinationButton.setEnabled(false);
+        storageButton.setEnabled(false);
+        pictureButton.setEnabled(false);
         pathText.setText(path);
         gpsText.setVisibility(View.GONE);
         if (partNumber == 1) {

@@ -52,6 +52,11 @@
     <string name="storage_selected">Selected</string>
     <string name="gallery_not_ready">Gallery integration will be added after recording validation.</string>
     <string name="open_settings">Open settings</string>
+    <string name="picture_button_label">Picture</string>
+    <string name="storage_button_label">Save to</string>
+    <string name="open_picture_settings">Open picture adjustments</string>
+    <string name="destination_internal_short">Internal</string>
+    <string name="destination_external_short">External</string>
     <string name="change_storage">Change recording destination</string>
 
     <string name="settings_picture_adjustments">Picture Adjustments</string>
