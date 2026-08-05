@@ -1,0 +1,28 @@
+<resources>
+    <color name="pilot_black">#FF0A0B0D</color>
+    <color name="pilot_background">#FF232426</color>
+    <color name="pilot_panel_top">#D96F7277</color>
+    <color name="pilot_panel_bottom">#D94A4D52</color>
+    <color name="pilot_panel_pressed">#E07E8288</color>
+    <color name="pilot_panel_stroke">#99D9DCE0</color>
+    <color name="pilot_divider">#66F2F4F5</color>
+    <color name="pilot_status_top">#FFF8FAFA</color>
+    <color name="pilot_status_bottom">#FFE7EAEC</color>
+    <color name="pilot_status_text">#FF27292D</color>
+    <color name="pilot_text_primary">#FFF8F8F8</color>
+    <color name="pilot_text_secondary">#FFD4D7DA</color>
+    <color name="pilot_text_muted">#FFADB1B5</color>
+    <color name="pilot_yellow">#FFFFED00</color>
+    <color name="pilot_blue">#FF28A8FF</color>
+    <color name="pilot_red">#FFFF3B30</color>
+    <color name="pilot_green">#FF49D17D</color>
+    <color name="pilot_overlay">#B3141619</color>
+    <color name="pilot_overlay_light">#991D2024</color>
+    <color name="pilot_transparent">#00000000</color>
+    <!-- Backward-compatible names used by the MVP code. -->
+    <color name="panel_background">#CC111111</color>
+    <color name="text_primary">#FFFFFFFF</color>
+    <color name="text_secondary">#FFBDBDBD</color>
+    <color name="accent">#FFFF3B30</color>
+    <color name="button_background">#CC2A2A2A</color>
+</resources>
