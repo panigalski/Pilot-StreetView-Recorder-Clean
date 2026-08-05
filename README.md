@@ -1,4 +1,4 @@
-# Pilot Street View Recorder — clean restart v1.5
+# Pilot Street View Recorder — clean restart v1.2
 
 Standalone Android application for Labpano Pilot One and Pilot One EE. It is
 installed beside the original system Camera application and uses a separate
@@ -15,8 +15,7 @@ package name:
 - Approximate 4 GiB file rotation
 - Internal storage or dynamically detected USB/SD storage
 - External Storage is shown in the chooser only while a removable volume is mounted
-- GPS metadata embedded in the MP4 CAMM track and verified at runtime
-- Timestamp filenames such as `260805_174655883.mp4`
+- GPS metadata forwarding while recording
 - In-place settings and storage dialogs so the vendor preview SurfaceView is
   not destroyed when choosing storage
 - Camera low-FPS auto-reopen suppression for Pilot OS stability
@@ -126,9 +125,16 @@ This is an independently signed standalone application, not a replacement for
 `com.pi.pilot.camera`. Test on one camera first. Do not run the original Camera
 app and this recorder at the same time.
 
-## v1.5 update
+## v1.4 update
 
-Version 1.5 installs the newly supplied Pilot One launcher icon, changes every
-video filename to `yyMMdd_HHmmssSSS.mp4`, forwards every fresh GPS fix into the
-Street View CAMM track, and verifies that GPS samples are actually written to
-each MP4 segment. See `GPS_CAMM_FILENAME_ICON_UPDATE_V15.md`.
+Version 1.4 adds a strict GPS-quality gate before recording, broader Pilot OS USB-volume discovery, and the supplied Pilot One launcher icon. See `GPS_STORAGE_ICON_UPDATE_V14.md`.
+
+
+## Picture adjustments
+
+Before recording, open the gear menu and choose **Picture Adjustments**. The
+app exposes the live controls supported by the Pilot camera SDK: exposure time
+(when the firmware permits `/efs` access), ISO, EV, white balance, AWB lock and
+the full automatic/manual stitching-distance range. Values are persisted and
+reapplied after every preview restart. See `PICTURE_ADJUSTMENTS_UPDATE_V18.md`
+for the supported values and limitations.
