@@ -547,6 +547,14 @@ public class PilotSDK implements PanoSurfaceViewListener {
     }
 
     /**
+     * Number of GPS fixes successfully written to the current Street View
+     * recording's CAMM metadata track.
+     */
+    public static long getRecordedLocationSampleCount() {
+        return MediaRecorderUtil.getLocationSamplesWritten();
+    }
+
+    /**
      * Set the encoding surface used for recording.
      * This surface generally comes from MediaRecorder.getSurface() or MediaCodec.createInputSurface().
      * The SDK will render graphics to this surface and be encoded by MediaRecorder or MediaCodec.

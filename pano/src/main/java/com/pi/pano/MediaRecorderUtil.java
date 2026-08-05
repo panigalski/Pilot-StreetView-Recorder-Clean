@@ -36,6 +36,7 @@ public class MediaRecorderUtil {
 
     private static Location mLocation;
     private static final Object mLocationLock = new Object();
+    private static volatile long mLocationSamplesWritten;
 
     private AudioRecord mAudioRecord;
     private byte[] mAudioBuffer;
@@ -112,6 +113,7 @@ public class MediaRecorderUtil {
 
         mMemomotionRatio = memomotionRatio;
         mUseForGoogleMap = useForGoogleMap;
+        mLocationSamplesWritten = 0L;
 
         if (useForGoogleMap) {
             if (memomotionRatio == VIDEO_FRAME_RATE_0_3FPS) {
@@ -209,8 +211,13 @@ public class MediaRecorderUtil {
     static void setLocationInfo(Location location)
     {
         synchronized (mLocationLock) {
-            mLocation = location;
+            mLocation = location == null ? null : new Location(location);
         }
+    }
+
+    static long getLocationSamplesWritten()
+    {
+        return mLocationSamplesWritten;
     }
 
     private final Thread mVideoThread = new Thread() {
@@ -370,6 +377,7 @@ public class MediaRecorderUtil {
                                     mCammData.put(BitToLittleFloat(0));//mLocation.getSpeedAccuracyMetersPerSecond() 需要level26
                                     mCammInfo.set(0, mCammData.position(), mBufferInfo.presentationTimeUs, 0);
                                     mMediaMuxer.writeSampleData(mCammEncoderTrack, mCammData, mCammInfo);
+                                    mLocationSamplesWritten++;
                                 }
                                 mLocation = null;
                             }
