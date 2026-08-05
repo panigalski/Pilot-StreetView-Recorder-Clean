@@ -575,7 +575,7 @@ public final class MainActivity extends Activity
     private void playStopRecordingSound() {
         releaseStartRecordingSound();
         releaseStopRecordingSound();
-        MediaPlayer player = MediaPlayer.create(this, R.raw.stop_recording);
+        MediaPlayer player = MediaPlayer.create(this, R.raw.recording_stop_cue);
         if (player == null) {
             return;
         }
