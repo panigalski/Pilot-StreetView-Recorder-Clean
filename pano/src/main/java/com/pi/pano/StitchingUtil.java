@@ -6,6 +6,7 @@ import android.media.MediaMetadataRetriever;
 import android.util.Log;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -367,7 +368,17 @@ public class StitchingUtil
         }
         finally
         {
-            mmr.release();
+            try
+            {
+                mmr.release();
+            }
+            catch (IOException e)
+            {
+                // API 33+ declares IOException on release(). Pilot OS uses an
+                // older implementation, but catching it keeps this SDK source
+                // compatible with modern compile SDKs.
+                Log.w("StitchingUtil", "Failed to release MediaMetadataRetriever", e);
+            }
         }
 
         return 1;
