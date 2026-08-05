@@ -7,9 +7,12 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.location.GpsSatellite;
+import android.location.GpsStatus;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.FrameLayout;
@@ -28,9 +31,12 @@ import java.util.List;
 import java.util.Locale;
 
 public final class MainActivity extends Activity
-        implements LocationListener, SegmentedStreetViewRecorder.Listener {
+        implements LocationListener, GpsStatus.Listener, SegmentedStreetViewRecorder.Listener {
 
     private static final int PERMISSION_REQUEST = 1001;
+    private static final long GPS_MAX_FIX_AGE_MS = 10_000L;
+    private static final float GPS_MAX_ACCURACY_METERS = 25F;
+    private static final int GPS_MIN_SATELLITES_USED = 4;
 
     private final String[] requestedPermissions = new String[]{
             Manifest.permission.CAMERA,
@@ -53,6 +59,16 @@ public final class MainActivity extends Activity
             long seconds = elapsed % 60L;
             recordTime.setText(String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds));
             uiHandler.postDelayed(this, 1000L);
+        }
+    };
+    private final Runnable gpsUiRefresh = new Runnable() {
+        @Override
+        public void run() {
+            if (!activityResumed) {
+                return;
+            }
+            updateGpsUi();
+            uiHandler.postDelayed(this, 2000L);
         }
     };
 
@@ -80,6 +96,11 @@ public final class MainActivity extends Activity
     private boolean activityResumed;
     private boolean cameraReleaseInProgress;
     private boolean locationUpdatesActive;
+    private boolean gpsStatusListenerActive;
+    private Location latestGpsLocation;
+    private long latestGpsFixReceivedAt;
+    private int gpsSatellitesVisible;
+    private int gpsSatellitesUsed;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -150,6 +171,8 @@ public final class MainActivity extends Activity
         statusBar.start();
         showSelectedModeWithoutDiskProbe();
         startLocationUpdates();
+        uiHandler.removeCallbacks(gpsUiRefresh);
+        uiHandler.post(gpsUiRefresh);
 
         if (!initialized && !cameraReleaseInProgress
                 && checkSelfPermission(Manifest.permission.CAMERA)
@@ -168,6 +191,7 @@ public final class MainActivity extends Activity
         activityResumed = false;
         destinationScanGeneration++;
         uiHandler.removeCallbacks(recordingClock);
+        uiHandler.removeCallbacks(gpsUiRefresh);
         statusBar.stop();
         stopLocationUpdates();
         beginCameraReleaseForBackground();
@@ -466,6 +490,16 @@ public final class MainActivity extends Activity
             Toast.makeText(this, R.string.storage_checking_short, Toast.LENGTH_SHORT).show();
             return;
         }
+        String gpsProblem = getGpsReadinessProblem();
+        if (gpsProblem != null) {
+            statusText.setText(R.string.gps_required_short);
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.gps_required_title)
+                    .setMessage(gpsProblem)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return;
+        }
         validateDestinationAndStartAsync();
     }
 
@@ -525,18 +559,16 @@ public final class MainActivity extends Activity
     }
 
     private void continueStartAfterStorageValidation() {
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
+        String gpsProblem = getGpsReadinessProblem();
+        if (gpsProblem != null) {
+            destinationButton.setEnabled(true);
+            settingsButton.setEnabled(true);
+            recordButton.setEnabled(previewReady && !destinationCheckInProgress);
+            statusText.setText(R.string.gps_required_short);
             new AlertDialog.Builder(this)
-                    .setTitle("GPS permission missing")
-                    .setMessage("Street View video should include GPS. Record without GPS anyway?")
-                    .setNegativeButton(android.R.string.cancel, (dialog, which) -> {
-                        destinationButton.setEnabled(true);
-                        settingsButton.setEnabled(true);
-                        recordButton.setEnabled(previewReady && !destinationCheckInProgress);
-                        statusText.setText(R.string.preview_ready);
-                    })
-                    .setPositiveButton("Record", (dialog, which) -> startRecordingNow())
+                    .setTitle(R.string.gps_required_title)
+                    .setMessage(gpsProblem)
+                    .setPositiveButton(android.R.string.ok, null)
                     .show();
             return;
         }
@@ -554,6 +586,9 @@ public final class MainActivity extends Activity
         recordTime.setVisibility(View.VISIBLE);
         uiHandler.removeCallbacks(recordingClock);
         uiHandler.post(recordingClock);
+        if (latestGpsLocation != null) {
+            PilotSDK.setLocationInfo(latestGpsLocation);
+        }
         recorder.start(selectedDestination.directory);
     }
 
@@ -573,49 +608,179 @@ public final class MainActivity extends Activity
         }
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
-            gpsText.setText("GPS permission not granted");
+            gpsText.setText(R.string.gps_permission_missing);
             return;
         }
         try {
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0F, this);
             locationUpdatesActive = true;
+            if (!gpsStatusListenerActive) {
+                gpsStatusListenerActive = locationManager.addGpsStatusListener(this);
+            }
             if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 gpsText.setText(R.string.gps_disabled);
+            } else {
+                updateGpsUi();
             }
         } catch (RuntimeException error) {
             locationUpdatesActive = false;
-            gpsText.setText("GPS unavailable");
+            gpsStatusListenerActive = false;
+            gpsText.setText(R.string.gps_unavailable);
         }
     }
 
     private void stopLocationUpdates() {
-        if (!locationUpdatesActive || locationManager == null) {
+        if (locationManager == null) {
             return;
         }
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED) {
-            try {
-                locationManager.removeUpdates(this);
-            } catch (RuntimeException ignored) {
-                // Provider may already have been stopped by Pilot OS.
+            if (locationUpdatesActive) {
+                try {
+                    locationManager.removeUpdates(this);
+                } catch (RuntimeException ignored) {
+                    // Provider may already have been stopped by Pilot OS.
+                }
+            }
+            if (gpsStatusListenerActive) {
+                try {
+                    locationManager.removeGpsStatusListener(this);
+                } catch (RuntimeException ignored) {
+                    // Listener may already have been removed by Pilot OS.
+                }
             }
         }
         locationUpdatesActive = false;
+        gpsStatusListenerActive = false;
+        latestGpsLocation = null;
+        latestGpsFixReceivedAt = 0L;
+        gpsSatellitesVisible = 0;
+        gpsSatellitesUsed = 0;
+    }
+
+    private String getGpsReadinessProblem() {
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            return getString(R.string.gps_problem_permission);
+        }
+        if (locationManager == null) {
+            return getString(R.string.gps_problem_unavailable);
+        }
+        try {
+            if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                return getString(R.string.gps_problem_disabled);
+            }
+        } catch (RuntimeException error) {
+            return getString(R.string.gps_problem_unavailable);
+        }
+        if (latestGpsLocation == null || latestGpsFixReceivedAt == 0L) {
+            return getString(R.string.gps_problem_no_fix);
+        }
+        long ageMs = SystemClock.elapsedRealtime() - latestGpsFixReceivedAt;
+        if (ageMs < 0L || ageMs > GPS_MAX_FIX_AGE_MS) {
+            return getString(R.string.gps_problem_stale);
+        }
+        if (!latestGpsLocation.hasAccuracy()) {
+            return getString(R.string.gps_problem_no_accuracy);
+        }
+        if (latestGpsLocation.getAccuracy() > GPS_MAX_ACCURACY_METERS) {
+            return getString(R.string.gps_problem_weak_accuracy,
+                    latestGpsLocation.getAccuracy(), GPS_MAX_ACCURACY_METERS);
+        }
+        if (gpsSatellitesVisible > 0 && gpsSatellitesUsed < GPS_MIN_SATELLITES_USED) {
+            return getString(R.string.gps_problem_satellites,
+                    gpsSatellitesUsed, GPS_MIN_SATELLITES_USED);
+        }
+        return null;
+    }
+
+    private void updateGpsUi() {
+        String problem = getGpsReadinessProblem();
+        if (problem == null && latestGpsLocation != null) {
+            gpsText.setText(getString(R.string.gps_ready_quality,
+                    latestGpsLocation.getAccuracy(), gpsSatellitesUsed));
+            return;
+        }
+        if (latestGpsLocation != null && latestGpsLocation.hasAccuracy()) {
+            gpsText.setText(getString(R.string.gps_weak_quality,
+                    latestGpsLocation.getAccuracy(), gpsSatellitesUsed));
+        } else if (gpsSatellitesVisible > 0) {
+            gpsText.setText(getString(R.string.gps_acquiring_satellites,
+                    gpsSatellitesUsed, gpsSatellitesVisible));
+        } else {
+            gpsText.setText(R.string.gps_waiting);
+        }
     }
 
     @Override
     public void onLocationChanged(Location location) {
+        if (location == null || !LocationManager.GPS_PROVIDER.equals(location.getProvider())) {
+            return;
+        }
+        latestGpsLocation = new Location(location);
+        latestGpsFixReceivedAt = SystemClock.elapsedRealtime();
+
         // The location metadata is only consumed by the recorder. Avoid touching
         // the recorder's static metadata state during preview-only operation.
         if (recorder != null && recorder.isRecording()) {
             PilotSDK.setLocationInfo(location);
         }
-        gpsText.setText(String.format(Locale.US, getString(R.string.gps_ready),
-                location.getLatitude(), location.getLongitude()));
+        updateGpsUi();
     }
 
-    @Override public void onProviderDisabled(String provider) { gpsText.setText(R.string.gps_disabled); }
-    @Override public void onProviderEnabled(String provider) { gpsText.setText(R.string.gps_waiting); }
+    @Override
+    public void onGpsStatusChanged(int event) {
+        if (locationManager == null
+                || checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        if (event == GpsStatus.GPS_EVENT_STOPPED) {
+            gpsSatellitesVisible = 0;
+            gpsSatellitesUsed = 0;
+            updateGpsUi();
+            return;
+        }
+        if (event != GpsStatus.GPS_EVENT_SATELLITE_STATUS
+                && event != GpsStatus.GPS_EVENT_FIRST_FIX
+                && event != GpsStatus.GPS_EVENT_STARTED) {
+            return;
+        }
+        try {
+            GpsStatus status = locationManager.getGpsStatus(null);
+            int visible = 0;
+            int used = 0;
+            if (status != null) {
+                for (GpsSatellite satellite : status.getSatellites()) {
+                    visible++;
+                    if (satellite.usedInFix()) {
+                        used++;
+                    }
+                }
+            }
+            gpsSatellitesVisible = visible;
+            gpsSatellitesUsed = used;
+            updateGpsUi();
+        } catch (RuntimeException ignored) {
+            // Satellite metadata is optional on some Pilot OS builds. Accuracy
+            // and fix freshness still provide a strict recording gate.
+        }
+    }
+
+    @Override
+    public void onProviderDisabled(String provider) {
+        latestGpsLocation = null;
+        latestGpsFixReceivedAt = 0L;
+        gpsText.setText(R.string.gps_disabled);
+    }
+
+    @Override
+    public void onProviderEnabled(String provider) {
+        latestGpsLocation = null;
+        latestGpsFixReceivedAt = 0L;
+        gpsText.setText(R.string.gps_waiting);
+    }
+
     @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
 
     @Override
@@ -651,6 +816,7 @@ public final class MainActivity extends Activity
     protected void onDestroy() {
         activityResumed = false;
         uiHandler.removeCallbacks(recordingClock);
+        uiHandler.removeCallbacks(gpsUiRefresh);
         stopLocationUpdates();
         beginCameraReleaseForBackground();
         super.onDestroy();
