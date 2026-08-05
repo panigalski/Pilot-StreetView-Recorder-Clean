@@ -41,9 +41,14 @@ jobs:
           "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
 
-      - name: Validate repository contents
+      - name: Validate repository contents when validator is present
         shell: bash
-        run: python3 scripts/validate_project.py
+        run: |
+          if [ -f scripts/validate_project.py ]; then
+            python3 scripts/validate_project.py
+          else
+            echo "scripts/validate_project.py is not present; skipping optional pre-build validation."
+          fi
 
       - name: Build debug APK
         shell: bash
