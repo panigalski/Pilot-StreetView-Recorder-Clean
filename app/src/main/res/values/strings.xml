@@ -29,6 +29,7 @@
     <string name="storage_checking">Checking internal storage…</string>
     <string name="storage_checking_external">Checking USB / SD storage…</string>
     <string name="storage_checking_short">Checking…</string>
+    <string name="storage_detecting_external">Checking for connected USB / SD storage…</string>
     <string name="storage_internal_hint">Built-in camera storage</string>
     <string name="storage_external_hint">USB / SD • verified before recording</string>
     <string name="storage_app_folder_suffix"> • app folder</string>

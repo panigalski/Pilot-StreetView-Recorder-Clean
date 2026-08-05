@@ -3,6 +3,8 @@ package com.panigalski.pilotstreetview;
 import android.content.Context;
 import android.os.Environment;
 import android.os.StatFs;
+import android.os.storage.StorageManager;
+import android.os.storage.StorageVolume;
 import android.util.Log;
 
 import java.io.File;
@@ -39,6 +41,56 @@ public final class StorageResolver {
             this.appSpecificFallback = appSpecificFallback;
             this.freeBytes = freeBytes;
         }
+    }
+
+    /**
+     * Returns true only when Android currently reports a mounted, writable,
+     * non-primary storage volume. This is intentionally a presence-only check:
+     * it does not create folders, open files, query StatFs, or enumerate media.
+     *
+     * The public StorageManager API is used first on Pilot OS (Android 7/API 24).
+     * getExternalFilesDirs() is retained as a conservative OEM fallback.
+     */
+    public static boolean isExternalStorageConnected(Context context) {
+        try {
+            StorageManager manager =
+                    (StorageManager) context.getSystemService(Context.STORAGE_SERVICE);
+            if (manager != null) {
+                List<StorageVolume> volumes = manager.getStorageVolumes();
+                if (volumes != null) {
+                    for (StorageVolume volume : volumes) {
+                        if (volume == null || volume.isPrimary()) {
+                            continue;
+                        }
+                        String state = volume.getState();
+                        boolean externalLike = volume.isRemovable() || !volume.isEmulated();
+                        if (externalLike && Environment.MEDIA_MOUNTED.equals(state)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "StorageManager presence check failed", error);
+        }
+
+        try {
+            File[] appDirs = context.getExternalFilesDirs(null);
+            if (appDirs != null) {
+                for (File appDir : appDirs) {
+                    if (appDir == null || !isRemovable(appDir)) {
+                        continue;
+                    }
+                    String state = Environment.getExternalStorageState(appDir);
+                    if (Environment.MEDIA_MOUNTED.equals(state)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Throwable error) {
+            Log.w(TAG, "External-files presence check failed", error);
+        }
+        return false;
     }
 
     public static Destination resolve(Context context, String mode) throws IOException {
