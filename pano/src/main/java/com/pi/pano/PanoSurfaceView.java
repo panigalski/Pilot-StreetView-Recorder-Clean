@@ -33,6 +33,7 @@ abstract class PanoSurfaceView extends SurfaceView implements PiPano.PiPanoListe
      * surface创建
      */
     private boolean mSurfaceCreated = false;
+    private boolean mReleaseRequested = false;
 
     public PanoSurfaceView(final Context context, AttributeSet attrs) {
         super(context, attrs);
@@ -108,6 +109,7 @@ abstract class PanoSurfaceView extends SurfaceView implements PiPano.PiPanoListe
 
                     if (!mSurfaceCreated) {
                         mSurfaceCreated = true;
+                        mReleaseRequested = false;
                         mPiPano = new PiPano(PanoSurfaceView.this, context);
                         mPiPano.setSurface(holder.getSurface(), 0);
                     }
@@ -119,11 +121,22 @@ abstract class PanoSurfaceView extends SurfaceView implements PiPano.PiPanoListe
 
                 @Override
                 public void surfaceDestroyed(SurfaceHolder holder) {
-                    if (mPiPano != null) {
-                        mPiPano.release();
-                    }
+                    releaseForLifecycle();
                 }
             });
+        }
+    }
+
+
+    /**
+     * Requests one asynchronous native release for the current preview session.
+     * Surface destruction and explicit Activity lifecycle cleanup can happen very
+     * close together on Pilot OS, so the guard prevents duplicate release messages.
+     */
+    void releaseForLifecycle() {
+        if (mPiPano != null && !mReleaseRequested) {
+            mReleaseRequested = true;
+            mPiPano.release();
         }
     }
 
@@ -184,6 +197,7 @@ abstract class PanoSurfaceView extends SurfaceView implements PiPano.PiPanoListe
             synchronized (sLock) {
                 sLock.notifyAll();
                 mSurfaceCreated = false;
+                mReleaseRequested = false;
                 mPiPano = null;
             }
         }

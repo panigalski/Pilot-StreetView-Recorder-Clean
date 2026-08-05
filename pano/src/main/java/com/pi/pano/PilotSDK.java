@@ -9,6 +9,7 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.view.Surface;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 
 import androidx.annotation.IntDef;
 
@@ -81,6 +82,21 @@ public class PilotSDK implements PanoSurfaceViewListener {
         mCameraSurfaceView.setOnPanoModeChangeListener(this);
 
         parentView.addView(mCameraSurfaceView);
+    }
+
+
+    /**
+     * Releases the preview/camera session when the hosting Activity leaves the
+     * foreground. This method is intentionally asynchronous: the native SDK
+     * completes cleanup on its own worker thread and reports completion through
+     * {@link PanoSDKListener#onPanoRelease()}.
+     */
+    public void release() {
+        mCameraSurfaceView.releaseForLifecycle();
+        ViewParent parent = mCameraSurfaceView.getParent();
+        if (parent instanceof ViewGroup) {
+            ((ViewGroup) parent).removeView(mCameraSurfaceView);
+        }
     }
 
     /**
