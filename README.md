@@ -1,4 +1,4 @@
-# Pilot Street View Recorder — clean restart v1.0
+# Pilot Street View Recorder — clean restart v1.2
 
 Standalone Android application for Labpano Pilot One and Pilot One EE. It is
 installed beside the original system Camera application and uses a separate
@@ -14,6 +14,7 @@ package name:
 - Ultra High bitrate multiplier
 - Approximate 4 GiB file rotation
 - Internal storage or dynamically detected USB/SD storage
+- External Storage is shown in the chooser only while a removable volume is mounted
 - GPS metadata forwarding while recording
 - In-place settings and storage dialogs so the vendor preview SurfaceView is
   not destroyed when choosing storage
