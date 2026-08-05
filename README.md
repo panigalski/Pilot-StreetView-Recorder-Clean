@@ -124,3 +124,7 @@ The selected volume is validated on a worker thread only when recording starts.
 This is an independently signed standalone application, not a replacement for
 `com.pi.pilot.camera`. Test on one camera first. Do not run the original Camera
 app and this recorder at the same time.
+
+## v1.4 update
+
+Version 1.4 adds a strict GPS-quality gate before recording, broader Pilot OS USB-volume discovery, and the supplied Pilot One launcher icon. See `GPS_STORAGE_ICON_UPDATE_V14.md`.
