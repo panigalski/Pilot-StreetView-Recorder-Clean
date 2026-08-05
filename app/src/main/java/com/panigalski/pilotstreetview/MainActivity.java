@@ -586,10 +586,9 @@ public final class MainActivity extends Activity
         recordTime.setVisibility(View.VISIBLE);
         uiHandler.removeCallbacks(recordingClock);
         uiHandler.post(recordingClock);
-        if (latestGpsLocation != null) {
-            PilotSDK.setLocationInfo(latestGpsLocation);
-        }
-        recorder.start(selectedDestination.directory);
+        recorder.start(
+                selectedDestination.directory,
+                latestGpsLocation == null ? null : new Location(latestGpsLocation));
     }
 
     private void resetRecordingUi() {
@@ -720,10 +719,10 @@ public final class MainActivity extends Activity
         latestGpsLocation = new Location(location);
         latestGpsFixReceivedAt = SystemClock.elapsedRealtime();
 
-        // The location metadata is only consumed by the recorder. Avoid touching
-        // the recorder's static metadata state during preview-only operation.
-        if (recorder != null && recorder.isRecording()) {
-            PilotSDK.setLocationInfo(location);
+        // Forward every fresh fix to the recorder. While recording, the
+        // recorder feeds it to PilotSDK so it is muxed into the MP4 CAMM track.
+        if (recorder != null) {
+            recorder.updateLocation(location);
         }
         updateGpsUi();
     }

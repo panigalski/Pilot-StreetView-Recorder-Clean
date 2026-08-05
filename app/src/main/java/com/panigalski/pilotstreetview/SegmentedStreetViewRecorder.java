@@ -1,7 +1,9 @@
 package com.panigalski.pilotstreetview;
 
+import android.location.Location;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 
 import com.pi.pano.MediaRecorderListener;
 import com.pi.pano.MediaRecorderUtil;
@@ -31,6 +33,9 @@ public final class SegmentedStreetViewRecorder {
             (FOUR_GIB_BITS / STREET_VIEW_BITRATE) * 1000L;
     private static final long MIN_FREE_BYTES = 5L * 1024L * 1024L * 1024L;
     private static final String FIRMWARE_VERSION = "5.18.11";
+    private static final long GPS_METADATA_GRACE_MS = 7_000L;
+    private static final long GPS_FIX_LOST_TIMEOUT_MS = 15_000L;
+    private static final long GPS_MONITOR_INTERVAL_MS = 2_000L;
 
     public interface Listener {
         void onRecordingStarted(String path, int partNumber);
@@ -47,6 +52,9 @@ public final class SegmentedStreetViewRecorder {
     private boolean recording;
     private boolean rotating;
     private int partNumber;
+    private Location latestLocation;
+    private long latestLocationReceivedAtMs;
+    private long currentSegmentStartedAtMs;
 
     private final Runnable rotateRunnable = new Runnable() {
         @Override
@@ -73,6 +81,37 @@ public final class SegmentedStreetViewRecorder {
         }
     };
 
+    /**
+     * Verifies that the Pilot SDK is actually writing GPS samples into the
+     * Street View CAMM metadata track and that live GPS updates continue while
+     * recording. A recording with no CAMM GPS sample is stopped rather than
+     * silently producing an MP4 with unusable Street View metadata.
+     */
+    private final Runnable gpsMetadataMonitor = new Runnable() {
+        @Override
+        public void run() {
+            if (!recording) {
+                return;
+            }
+
+            long now = SystemClock.elapsedRealtime();
+            if (latestLocation == null
+                    || now - latestLocationReceivedAtMs > GPS_FIX_LOST_TIMEOUT_MS) {
+                failAndStop("Recording stopped: GPS signal was lost for more than 15 seconds.");
+                return;
+            }
+
+            long segmentAge = now - currentSegmentStartedAtMs;
+            if (segmentAge >= GPS_METADATA_GRACE_MS
+                    && PilotSDK.getRecordedLocationSampleCount() <= 0L) {
+                failAndStop("Recording stopped: no GPS metadata was written to the MP4 CAMM track.");
+                return;
+            }
+
+            handler.postDelayed(this, GPS_MONITOR_INTERVAL_MS);
+        }
+    };
+
     public SegmentedStreetViewRecorder(Listener listener) {
         this.listener = listener;
     }
@@ -85,11 +124,17 @@ public final class SegmentedStreetViewRecorder {
         return SEGMENT_DURATION_MS;
     }
 
-    public void start(File destinationDirectory) {
+    public void start(File destinationDirectory, Location initialLocation) {
         if (recording) {
             return;
         }
+        if (initialLocation == null) {
+            listener.onError("A valid GPS fix is required before recording.");
+            return;
+        }
         directory = destinationDirectory;
+        latestLocation = new Location(initialLocation);
+        latestLocationReceivedAtMs = SystemClock.elapsedRealtime();
         long free = StorageResolver.availableBytes(directory);
         if (free > 0 && free < MIN_FREE_BYTES) {
             listener.onError("At least 5 GB of free space is required.");
@@ -101,6 +146,21 @@ public final class SegmentedStreetViewRecorder {
         rotating = false;
         startNextSegment();
         handler.post(storageMonitor);
+    }
+
+    /**
+     * Supplies every fresh GPS fix to the SDK while recording. The SDK writes
+     * each fix into the MP4's CAMM metadata track.
+     */
+    public synchronized void updateLocation(Location location) {
+        if (location == null) {
+            return;
+        }
+        latestLocation = new Location(location);
+        latestLocationReceivedAtMs = SystemClock.elapsedRealtime();
+        if (recording) {
+            PilotSDK.setLocationInfo(new Location(latestLocation));
+        }
     }
 
     public void stop() {
@@ -123,6 +183,7 @@ public final class SegmentedStreetViewRecorder {
         rotating = false;
         handler.removeCallbacks(rotateRunnable);
         handler.removeCallbacks(storageMonitor);
+        handler.removeCallbacks(gpsMetadataMonitor);
         String current = PilotSDK.getCurrentVideoFilePath();
         try {
             PilotSDK.stopRecord(FIRMWARE_VERSION);
@@ -142,8 +203,22 @@ public final class SegmentedStreetViewRecorder {
             return;
         }
         partNumber++;
-        String fileName = generateFileName(partNumber);
+        String fileName = generateFileName();
         String dirPath = directory.getAbsolutePath() + File.separator;
+
+        Location locationSnapshot;
+        synchronized (this) {
+            locationSnapshot = latestLocation == null ? null : new Location(latestLocation);
+        }
+        if (locationSnapshot == null) {
+            failAndStop("A valid GPS fix is required before starting a video segment.");
+            return;
+        }
+
+        // Seed the SDK before each segment so the first CAMM metadata sample can
+        // be written as soon as the MP4 muxer starts.
+        PilotSDK.setLocationInfo(locationSnapshot);
+
         int result = PilotSDK.startRecord(
                 dirPath,
                 fileName,
@@ -168,13 +243,18 @@ public final class SegmentedStreetViewRecorder {
         if (result != 0) {
             recording = false;
             handler.removeCallbacks(storageMonitor);
+            handler.removeCallbacks(gpsMetadataMonitor);
             listener.onError("PilotSDK.startRecord failed with code " + result + ".");
             return;
         }
 
         String current = PilotSDK.getCurrentVideoFilePath();
+        currentSegmentStartedAtMs = SystemClock.elapsedRealtime();
+        handler.removeCallbacks(gpsMetadataMonitor);
+        handler.postDelayed(gpsMetadataMonitor, GPS_MONITOR_INTERVAL_MS);
         listener.onRecordingStarted(current, partNumber);
-        listener.onStatus("Recording part " + partNumber + " • next 4 GB split in about "
+        listener.onStatus("Recording part " + partNumber
+                + " • GPS/CAMM metadata active • next 4 GB split in about "
                 + (SEGMENT_DURATION_MS / 1000L) + " seconds");
         handler.postDelayed(rotateRunnable, SEGMENT_DURATION_MS);
     }
@@ -184,6 +264,7 @@ public final class SegmentedStreetViewRecorder {
             return;
         }
         rotating = true;
+        handler.removeCallbacks(gpsMetadataMonitor);
         String current = PilotSDK.getCurrentVideoFilePath();
         try {
             PilotSDK.stopRecord(FIRMWARE_VERSION);
@@ -209,6 +290,7 @@ public final class SegmentedStreetViewRecorder {
         rotating = false;
         handler.removeCallbacks(rotateRunnable);
         handler.removeCallbacks(storageMonitor);
+        handler.removeCallbacks(gpsMetadataMonitor);
         if (wasRecording) {
             String current = PilotSDK.getCurrentVideoFilePath();
             try {
@@ -228,8 +310,9 @@ public final class SegmentedStreetViewRecorder {
         completedFiles.add(path);
     }
 
-    private static String generateFileName(int part) {
-        String timestamp = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
-        return String.format(Locale.US, "SV_%s_P%03d", timestamp, part);
+    private static String generateFileName() {
+        // Example: 260805_174655883 (yyMMdd_HHmmssSSS).
+        // PilotSDK appends the .mp4 extension automatically.
+        return new SimpleDateFormat("yyMMdd_HHmmssSSS", Locale.US).format(new Date());
     }
 }
