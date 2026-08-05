@@ -14,6 +14,7 @@ import android.content.DialogInterface;
 public final class SettingsDialog {
     public interface Listener {
         void onDestinationChanged(String mode);
+        void onPictureAdjustmentsChanged();
     }
 
     private SettingsDialog() {
@@ -34,6 +35,8 @@ public final class SettingsDialog {
                         + activity.getString(R.string.settings_countdown_value),
                 activity.getString(R.string.settings_fragment) + "\n"
                         + activity.getString(R.string.settings_fragment_value),
+                activity.getString(R.string.settings_picture_adjustments) + "\n"
+                        + PictureAdjustments.compactSummary(activity),
                 activity.getString(R.string.settings_destination) + "\n" + destination
         };
 
@@ -43,6 +46,18 @@ public final class SettingsDialog {
                     @Override
                     public void onClick(DialogInterface ignored, int which) {
                         if (which == 4) {
+                            PictureAdjustmentsDialog.show(activity,
+                                    new PictureAdjustmentsDialog.Listener() {
+                                        @Override
+                                        public void onPictureAdjustmentsChanged() {
+                                            if (listener != null) {
+                                                listener.onPictureAdjustmentsChanged();
+                                            }
+                                        }
+                                    });
+                            return;
+                        }
+                        if (which == 5) {
                             StorageSelectionDialog.show(activity,
                                     new StorageSelectionDialog.Listener() {
                                         @Override

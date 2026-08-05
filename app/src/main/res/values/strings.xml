@@ -53,4 +53,26 @@
     <string name="gallery_not_ready">Gallery integration will be added after recording validation.</string>
     <string name="open_settings">Open settings</string>
     <string name="change_storage">Change recording destination</string>
+
+    <string name="settings_picture_adjustments">Picture Adjustments</string>
+    <string name="picture_adjustments_title">Picture Adjustments</string>
+    <string name="picture_exposure_time">Exposure Time</string>
+    <string name="picture_iso">ISO</string>
+    <string name="picture_iso_manual">ISO (Manual Exposure)</string>
+    <string name="picture_ev">Exposure Compensation</string>
+    <string name="picture_white_balance">White Balance</string>
+    <string name="picture_awb_lock">Auto White Balance Lock</string>
+    <string name="picture_awb_lock_hint">AWB lock is available only while White Balance is set to Auto.</string>
+    <string name="picture_stitching_distance">Stitching Distance</string>
+    <string name="picture_stitch_auto">Auto measurement</string>
+    <string name="picture_stitch_manual">Manual (-100 to 100)</string>
+    <string name="picture_stitch_slider_hint">-100 is approximately 0.5 m, 0 is approximately 2 m, and 100 is infinity.</string>
+    <string name="picture_reset_defaults">Reset Picture Defaults</string>
+    <string name="picture_on">On</string>
+    <string name="picture_off">Off</string>
+    <string name="picture_manual_exposure_unavailable">Unavailable on this firmware</string>
+    <string name="picture_manual_exposure_details">Manual exposure time requires write access to the Pilot OS /efs exposure controls. This standalone app cannot use it on the current firmware. ISO, EV, white balance, AWB lock and stitching distance remain available.</string>
+    <string name="picture_adjustments_applied">Picture adjustments applied</string>
+    <string name="picture_defaults_restored">Picture defaults restored</string>
+    <string name="picture_apply_failed">Unable to apply picture settings</string>
 </resources>

@@ -116,6 +116,8 @@ public final class MainActivity extends Activity
     private int gpsSatellitesVisible;
     private int gpsSatellitesUsed;
     private MediaPlayer startRecordingPlayer;
+    private MediaPlayer stopRecordingPlayer;
+    private boolean recordingSessionActive;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -164,6 +166,11 @@ public final class MainActivity extends Activity
                     public void onDestinationChanged(String mode) {
                         showSelectedModeWithoutDiskProbe();
                     }
+
+                    @Override
+                    public void onPictureAdjustmentsChanged() {
+                        showStatus(R.string.picture_adjustments_applied);
+                    }
                 });
             }
         });
@@ -209,6 +216,8 @@ public final class MainActivity extends Activity
         uiHandler.removeCallbacks(gpsUiRefresh);
         uiHandler.removeCallbacks(hidePreviewReadyStatus);
         releaseStartRecordingSound();
+        releaseStopRecordingSound();
+        recordingSessionActive = false;
         statusBar.stop();
         stopLocationUpdates();
         beginCameraReleaseForBackground();
@@ -365,6 +374,14 @@ public final class MainActivity extends Activity
                                         || isFinishing() || isDestroyed()) {
                                     return;
                                 }
+                                try {
+                                    PictureAdjustments.applySaved(MainActivity.this);
+                                } catch (RuntimeException error) {
+                                    Toast.makeText(MainActivity.this,
+                                            getString(R.string.picture_apply_failed) + ": "
+                                                    + String.valueOf(error.getMessage()),
+                                            Toast.LENGTH_LONG).show();
+                                }
                                 previewReady = true;
                                 showPreviewReadyTemporarily();
                                 recordButton.setEnabled(!destinationCheckInProgress);
@@ -512,6 +529,7 @@ public final class MainActivity extends Activity
     }
 
     private void playStartRecordingSound() {
+        releaseStopRecordingSound();
         releaseStartRecordingSound();
         MediaPlayer player = MediaPlayer.create(this, R.raw.start_recording);
         if (player == null) {
@@ -543,6 +561,50 @@ public final class MainActivity extends Activity
     private void releaseStartRecordingSound() {
         MediaPlayer player = startRecordingPlayer;
         startRecordingPlayer = null;
+        if (player == null) {
+            return;
+        }
+        try {
+            player.stop();
+        } catch (IllegalStateException ignored) {
+            // Playback had already completed or had not started.
+        }
+        player.release();
+    }
+
+    private void playStopRecordingSound() {
+        releaseStartRecordingSound();
+        releaseStopRecordingSound();
+        MediaPlayer player = MediaPlayer.create(this, R.raw.stop_recording);
+        if (player == null) {
+            return;
+        }
+        stopRecordingPlayer = player;
+        player.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
+            @Override
+            public void onCompletion(MediaPlayer mediaPlayer) {
+                if (stopRecordingPlayer == mediaPlayer) {
+                    stopRecordingPlayer = null;
+                }
+                mediaPlayer.release();
+            }
+        });
+        player.setOnErrorListener(new MediaPlayer.OnErrorListener() {
+            @Override
+            public boolean onError(MediaPlayer mediaPlayer, int what, int extra) {
+                if (stopRecordingPlayer == mediaPlayer) {
+                    stopRecordingPlayer = null;
+                }
+                mediaPlayer.release();
+                return true;
+            }
+        });
+        player.start();
+    }
+
+    private void releaseStopRecordingSound() {
+        MediaPlayer player = stopRecordingPlayer;
+        stopRecordingPlayer = null;
         if (player == null) {
             return;
         }
@@ -873,6 +935,7 @@ public final class MainActivity extends Activity
         pathText.setText(path);
         gpsText.setVisibility(View.GONE);
         if (partNumber == 1) {
+            recordingSessionActive = true;
             playStartRecordingSound();
         }
         showStatus("Recording part " + partNumber);
@@ -880,7 +943,12 @@ public final class MainActivity extends Activity
 
     @Override
     public void onRecordingStopped(List<String> completedFiles) {
+        boolean shouldPlayStopCue = recordingSessionActive;
+        recordingSessionActive = false;
         resetRecordingUi();
+        if (shouldPlayStopCue) {
+            playStopRecordingSound();
+        }
         showStatus("Stopped • " + completedFiles.size() + " file(s) saved");
         showSelectedModeWithoutDiskProbe();
     }
@@ -892,7 +960,12 @@ public final class MainActivity extends Activity
 
     @Override
     public void onError(String message) {
+        boolean shouldPlayStopCue = recordingSessionActive;
+        recordingSessionActive = false;
         resetRecordingUi();
+        if (shouldPlayStopCue) {
+            playStopRecordingSound();
+        }
         showStatus(message);
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
     }
@@ -904,6 +977,8 @@ public final class MainActivity extends Activity
         uiHandler.removeCallbacks(gpsUiRefresh);
         uiHandler.removeCallbacks(hidePreviewReadyStatus);
         releaseStartRecordingSound();
+        releaseStopRecordingSound();
+        recordingSessionActive = false;
         stopLocationUpdates();
         beginCameraReleaseForBackground();
         super.onDestroy();
