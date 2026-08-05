@@ -104,6 +104,18 @@ public final class SegmentedStreetViewRecorder {
     }
 
     public void stop() {
+        stopInternal(true);
+    }
+
+    /**
+     * Stops recording during Activity backgrounding without invoking UI
+     * callbacks from the lifecycle worker thread.
+     */
+    public void stopForLifecycle() {
+        stopInternal(false);
+    }
+
+    private synchronized void stopInternal(boolean notifyListener) {
         if (!recording) {
             return;
         }
@@ -115,9 +127,13 @@ public final class SegmentedStreetViewRecorder {
         try {
             PilotSDK.stopRecord(FIRMWARE_VERSION);
             addCompleted(current);
-            listener.onRecordingStopped(new ArrayList<>(completedFiles));
+            if (notifyListener) {
+                listener.onRecordingStopped(new ArrayList<>(completedFiles));
+            }
         } catch (RuntimeException error) {
-            listener.onError("Unable to stop recording: " + error.getMessage());
+            if (notifyListener) {
+                listener.onError("Unable to stop recording: " + error.getMessage());
+            }
         }
     }
 

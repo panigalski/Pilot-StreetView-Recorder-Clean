@@ -77,6 +77,9 @@ public final class MainActivity extends Activity
     private long recordingStartedAt;
     private int destinationScanGeneration;
     private boolean destinationCheckInProgress;
+    private boolean activityResumed;
+    private boolean cameraReleaseInProgress;
+    private boolean locationUpdatesActive;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -142,16 +145,86 @@ public final class MainActivity extends Activity
     @Override
     protected void onResume() {
         super.onResume();
+        activityResumed = true;
         UiChrome.apply(this);
         statusBar.start();
         showSelectedModeWithoutDiskProbe();
+        startLocationUpdates();
+
+        if (!initialized && !cameraReleaseInProgress
+                && checkSelfPermission(Manifest.permission.CAMERA)
+                == PackageManager.PERMISSION_GRANTED
+                && checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                == PackageManager.PERMISSION_GRANTED) {
+            initializeCameraAndLocation();
+        } else if (cameraReleaseInProgress) {
+            statusText.setText("Releasing camera...");
+            recordButton.setEnabled(false);
+        }
     }
 
     @Override
     protected void onPause() {
+        activityResumed = false;
         destinationScanGeneration++;
+        uiHandler.removeCallbacks(recordingClock);
         statusBar.stop();
+        stopLocationUpdates();
+        beginCameraReleaseForBackground();
         super.onPause();
+    }
+
+    /**
+     * Releases all camera and GPS resources as soon as this Activity leaves the
+     * foreground. Android does not guarantee onDestroy() when switching apps,
+     * so cleanup must not be deferred until destruction.
+     */
+    private void beginCameraReleaseForBackground() {
+        if (cameraReleaseInProgress) {
+            return;
+        }
+        previewReady = false;
+        recordButton.setEnabled(false);
+
+        if (pilotSDK == null) {
+            initialized = false;
+            return;
+        }
+
+        cameraReleaseInProgress = true;
+        statusText.setText("Releasing camera...");
+
+        if (recorder != null && recorder.isRecording()) {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    recorder.stopForLifecycle();
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            releasePilotSdkOnUiThread();
+                        }
+                    });
+                }
+            }, "pilot-recording-lifecycle-stop").start();
+        } else {
+            releasePilotSdkOnUiThread();
+        }
+    }
+
+    private void releasePilotSdkOnUiThread() {
+        PilotSDK sdk = pilotSDK;
+        pilotSDK = null;
+        initialized = false;
+        if (sdk == null) {
+            cameraReleaseInProgress = false;
+            return;
+        }
+        try {
+            sdk.release();
+        } catch (RuntimeException error) {
+            cameraReleaseInProgress = false;
+        }
     }
 
     private void requestPermissionsAndInitialize() {
@@ -184,7 +257,7 @@ public final class MainActivity extends Activity
     }
 
     private void initializeCameraAndLocation() {
-        if (initialized) {
+        if (initialized || cameraReleaseInProgress || isFinishing() || isDestroyed()) {
             return;
         }
         initialized = true;
@@ -194,14 +267,37 @@ public final class MainActivity extends Activity
         pilotSDK = PreviewHelper.initPanoView(previewContainer, new PanoSDKListener() {
             @Override
             public void onPanoCreate() {
-                configureStreetViewPreview();
+                if (!cameraReleaseInProgress) {
+                    configureStreetViewPreview();
+                }
             }
 
             @Override
             public void onPanoRelease() {
-                previewReady = false;
-                recordButton.setEnabled(false);
-                statusText.setText("Preview released");
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        previewReady = false;
+                        initialized = false;
+                        pilotSDK = null;
+                        cameraReleaseInProgress = false;
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        recordButton.setEnabled(false);
+                        statusText.setText("Preview released");
+                        if (activityResumed) {
+                            uiHandler.postDelayed(new Runnable() {
+                                @Override
+                                public void run() {
+                                    if (activityResumed && !cameraReleaseInProgress) {
+                                        initializeCameraAndLocation();
+                                    }
+                                }
+                            }, 300L);
+                        }
+                    }
+                });
             }
 
             @Override public void onChangePreviewMode(int mode) { }
@@ -217,11 +313,18 @@ public final class MainActivity extends Activity
                 new ChangeResolutionListener() {
                     @Override
                     protected void onChangeResolution(int width, int height) {
+                        if (cameraReleaseInProgress) {
+                            return;
+                        }
                         PilotSDK.setPreviewMode(PiPreviewMode.planet, 0F, false);
-                        previewReady = true;
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
+                                if (cameraReleaseInProgress
+                                        || isFinishing() || isDestroyed()) {
+                                    return;
+                                }
+                                previewReady = true;
                                 statusText.setText(R.string.preview_ready);
                                 recordButton.setEnabled(!destinationCheckInProgress);
                             }
@@ -465,6 +568,9 @@ public final class MainActivity extends Activity
     }
 
     private void startLocationUpdates() {
+        if (locationUpdatesActive || locationManager == null) {
+            return;
+        }
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
             gpsText.setText("GPS permission not granted");
@@ -472,12 +578,29 @@ public final class MainActivity extends Activity
         }
         try {
             locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0F, this);
+            locationUpdatesActive = true;
             if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                 gpsText.setText(R.string.gps_disabled);
             }
         } catch (RuntimeException error) {
+            locationUpdatesActive = false;
             gpsText.setText("GPS unavailable");
         }
+    }
+
+    private void stopLocationUpdates() {
+        if (!locationUpdatesActive || locationManager == null) {
+            return;
+        }
+        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+            try {
+                locationManager.removeUpdates(this);
+            } catch (RuntimeException ignored) {
+                // Provider may already have been stopped by Pilot OS.
+            }
+        }
+        locationUpdatesActive = false;
     }
 
     @Override
@@ -526,19 +649,10 @@ public final class MainActivity extends Activity
 
     @Override
     protected void onDestroy() {
+        activityResumed = false;
         uiHandler.removeCallbacks(recordingClock);
-        if (recorder != null && recorder.isRecording()) {
-            recorder.stop();
-        }
-        if (locationManager != null
-                && checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED) {
-            try {
-                locationManager.removeUpdates(this);
-            } catch (RuntimeException ignored) {
-                // No-op.
-            }
-        }
+        stopLocationUpdates();
+        beginCameraReleaseForBackground();
         super.onDestroy();
     }
 }
