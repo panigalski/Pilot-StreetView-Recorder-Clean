@@ -39,6 +39,8 @@ public final class MainActivity extends Activity
     private static final float GPS_MAX_ACCURACY_METERS = 25F;
     private static final int GPS_MIN_SATELLITES_USED = 4;
     private static final long PREVIEW_READY_DISPLAY_MS = 5_000L;
+    private static final int CPU_TEMP_WARNING_C = 80;
+    private static final int CPU_TEMP_CRITICAL_C = 85;
 
     private final String[] requestedPermissions = new String[]{
             Manifest.permission.CAMERA,
@@ -97,6 +99,7 @@ public final class MainActivity extends Activity
     private ImageButton recordButton;
     private View pictureButton;
     private View storageButton;
+    private View settingsButton;
 
     private PilotStatusBarController statusBar;
     private LocationManager locationManager;
@@ -119,6 +122,11 @@ public final class MainActivity extends Activity
     private MediaPlayer startRecordingPlayer;
     private MediaPlayer stopRecordingPlayer;
     private boolean recordingSessionActive;
+    private final CpuTemperatureMonitor cpuTemperatureMonitor = new CpuTemperatureMonitor();
+    private int previousCpuTemperature;
+    private int nextTemperatureWarning = CPU_TEMP_WARNING_C;
+    private AlertDialog temperatureWarningDialog;
+    private boolean customTemperatureSoundArmed = true;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -137,6 +145,7 @@ public final class MainActivity extends Activity
         recordButton = findViewById(R.id.record_button);
         pictureButton = findViewById(R.id.picture_button);
         storageButton = findViewById(R.id.storage_button);
+        settingsButton = findViewById(R.id.settings_button);
 
         statusBar = new PilotStatusBarController(this, "");
         locationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
@@ -173,6 +182,29 @@ public final class MainActivity extends Activity
                         });
             }
         });
+        settingsButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (recorder.isRecording()) {
+                    Toast.makeText(MainActivity.this,
+                            getString(R.string.stop_recording_before_settings),
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                SettingsDialog.show(MainActivity.this, new SettingsDialog.Listener() {
+                    @Override public void onDestinationChanged(String mode) {
+                        showSelectedModeWithoutDiskProbe();
+                    }
+                    @Override public void onPictureAdjustmentsChanged() {
+                        updatePictureSummary();
+                    }
+                    @Override public void onTemperatureThresholdChanged(int thresholdCelsius) {
+                        customTemperatureSoundArmed = true;
+                        showStatus(getString(R.string.temperature_sound_threshold_saved, thresholdCelsius));
+                    }
+                });
+            }
+        });
 
         updatePictureSummary();
         showSelectedModeWithoutDiskProbe();
@@ -185,6 +217,7 @@ public final class MainActivity extends Activity
         activityResumed = true;
         UiChrome.apply(this);
         statusBar.start();
+        startTemperatureMonitoring();
         showSelectedModeWithoutDiskProbe();
         updatePictureSummary();
         startLocationUpdates();
@@ -212,7 +245,9 @@ public final class MainActivity extends Activity
         uiHandler.removeCallbacks(hidePreviewReadyStatus);
         releaseStartRecordingSound();
         releaseStopRecordingSound();
+        TemperatureAlarmSound.stop();
         recordingSessionActive = false;
+        stopTemperatureMonitoring();
         statusBar.stop();
         stopLocationUpdates();
         beginCameraReleaseForBackground();
@@ -652,6 +687,7 @@ public final class MainActivity extends Activity
         recordButton.setEnabled(false);
         storageButton.setEnabled(false);
         pictureButton.setEnabled(false);
+        settingsButton.setEnabled(false);
         showStatus(R.string.storage_checking_short);
 
         new Thread(new Runnable() {
@@ -720,6 +756,7 @@ public final class MainActivity extends Activity
     private void startRecordingNow() {
         storageButton.setEnabled(false);
         pictureButton.setEnabled(false);
+        settingsButton.setEnabled(false);
         recordButton.setEnabled(true);
         recordButton.setBackgroundResource(R.drawable.record_button_active);
         recordCaption.setText(R.string.stop_recording);
@@ -741,8 +778,109 @@ public final class MainActivity extends Activity
         recordButton.setEnabled(previewReady && !destinationCheckInProgress);
         storageButton.setEnabled(true);
         pictureButton.setEnabled(true);
+        settingsButton.setEnabled(true);
         gpsText.setVisibility(View.VISIBLE);
         updateGpsUi();
+    }
+
+    /**
+     * Mirrors Labpano's original preview temperature watcher: poll once per
+     * second, warn only while temperature is rising, warn at 80 C and again
+     * at 85 C, and do not automatically stop recording.
+     */
+    private void startTemperatureMonitoring() {
+        previousCpuTemperature = 0;
+        nextTemperatureWarning = CPU_TEMP_WARNING_C;
+        customTemperatureSoundArmed = true;
+        cpuTemperatureMonitor.start(new CpuTemperatureMonitor.Listener() {
+            @Override
+            public void onTemperatureChanged(final int temperatureCelsius) {
+                if (temperatureCelsius == 0) {
+                    return;
+                }
+                final int previous = previousCpuTemperature;
+                previousCpuTemperature = temperatureCelsius;
+
+                int customThreshold = RecorderPreferences.getTemperatureSoundThreshold(
+                        MainActivity.this);
+                if (customTemperatureSoundArmed && temperatureCelsius >= customThreshold) {
+                    customTemperatureSoundArmed = false;
+                    TemperatureAlarmSound.play();
+                } else if (!customTemperatureSoundArmed
+                        && temperatureCelsius <= customThreshold - 3) {
+                    // Hysteresis prevents the warning tone from repeating every
+                    // second while the CPU hovers around the selected threshold.
+                    customTemperatureSoundArmed = true;
+                }
+
+                if (temperatureCelsius <= previous) {
+                    return;
+                }
+
+                final int warningLevel;
+                if (nextTemperatureWarning <= CPU_TEMP_WARNING_C
+                        && temperatureCelsius >= CPU_TEMP_CRITICAL_C) {
+                    warningLevel = CPU_TEMP_CRITICAL_C;
+                    nextTemperatureWarning = Integer.MAX_VALUE;
+                } else if (nextTemperatureWarning <= CPU_TEMP_WARNING_C
+                        && temperatureCelsius >= CPU_TEMP_WARNING_C) {
+                    warningLevel = CPU_TEMP_WARNING_C;
+                    nextTemperatureWarning = CPU_TEMP_CRITICAL_C;
+                } else if (nextTemperatureWarning == CPU_TEMP_CRITICAL_C
+                        && temperatureCelsius >= CPU_TEMP_CRITICAL_C) {
+                    warningLevel = CPU_TEMP_CRITICAL_C;
+                    nextTemperatureWarning = Integer.MAX_VALUE;
+                } else {
+                    return;
+                }
+
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        showTemperatureWarning(temperatureCelsius, warningLevel);
+                    }
+                });
+            }
+        });
+    }
+
+    private void stopTemperatureMonitoring() {
+        cpuTemperatureMonitor.stop();
+        previousCpuTemperature = 0;
+        nextTemperatureWarning = CPU_TEMP_WARNING_C;
+        customTemperatureSoundArmed = true;
+        TemperatureAlarmSound.stop();
+        if (temperatureWarningDialog != null) {
+            try {
+                temperatureWarningDialog.dismiss();
+            } catch (RuntimeException ignored) {
+                // Activity may already be leaving the foreground.
+            }
+            temperatureWarningDialog = null;
+        }
+    }
+
+    private void showTemperatureWarning(int temperatureCelsius, int warningLevel) {
+        if (!activityResumed || isFinishing() || isDestroyed()
+                || temperatureWarningDialog != null) {
+            return;
+        }
+        boolean critical = warningLevel >= CPU_TEMP_CRITICAL_C;
+        String title = getString(critical
+                ? R.string.temperature_critical_title
+                : R.string.temperature_hot_title);
+        String message = getString(critical
+                        ? R.string.temperature_critical_message
+                        : R.string.temperature_hot_message,
+                temperatureCelsius);
+        temperatureWarningDialog = new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setMessage(message)
+                .setPositiveButton(android.R.string.ok, null)
+                .create();
+        temperatureWarningDialog.setCanceledOnTouchOutside(false);
+        temperatureWarningDialog.setOnDismissListener(dialog -> temperatureWarningDialog = null);
+        temperatureWarningDialog.show();
     }
 
     private void startLocationUpdates() {
@@ -936,6 +1074,7 @@ public final class MainActivity extends Activity
         recordButton.setEnabled(true);
         storageButton.setEnabled(false);
         pictureButton.setEnabled(false);
+        settingsButton.setEnabled(false);
         pathText.setText(path);
         gpsText.setVisibility(View.GONE);
         if (partNumber == 1) {
@@ -982,7 +1121,9 @@ public final class MainActivity extends Activity
         uiHandler.removeCallbacks(hidePreviewReadyStatus);
         releaseStartRecordingSound();
         releaseStopRecordingSound();
+        TemperatureAlarmSound.stop();
         recordingSessionActive = false;
+        stopTemperatureMonitoring();
         stopLocationUpdates();
         beginCameraReleaseForBackground();
         super.onDestroy();

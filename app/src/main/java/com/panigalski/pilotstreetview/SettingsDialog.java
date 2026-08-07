@@ -15,6 +15,7 @@ public final class SettingsDialog {
     public interface Listener {
         void onDestinationChanged(String mode);
         void onPictureAdjustmentsChanged();
+        void onTemperatureThresholdChanged(int thresholdCelsius);
     }
 
     private SettingsDialog() {
@@ -37,6 +38,9 @@ public final class SettingsDialog {
                         + activity.getString(R.string.settings_fragment_value),
                 activity.getString(R.string.settings_picture_adjustments) + "\n"
                         + PictureAdjustments.compactSummary(activity),
+                activity.getString(R.string.settings_temperature_warning) + "\n"
+                        + activity.getString(R.string.temperature_sound_threshold_value,
+                        RecorderPreferences.getTemperatureSoundThreshold(activity)),
                 activity.getString(R.string.settings_destination) + "\n" + destination
         };
 
@@ -58,6 +62,18 @@ public final class SettingsDialog {
                             return;
                         }
                         if (which == 5) {
+                            TemperatureSettingsDialog.show(activity,
+                                    new TemperatureSettingsDialog.Listener() {
+                                        @Override
+                                        public void onTemperatureThresholdChanged(int thresholdCelsius) {
+                                            if (listener != null) {
+                                                listener.onTemperatureThresholdChanged(thresholdCelsius);
+                                            }
+                                        }
+                                    });
+                            return;
+                        }
+                        if (which == 6) {
                             StorageSelectionDialog.show(activity,
                                     new StorageSelectionDialog.Listener() {
                                         @Override

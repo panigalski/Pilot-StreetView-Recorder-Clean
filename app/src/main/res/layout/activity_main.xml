@@ -71,12 +71,16 @@
     <!-- Visual Pro badge mirrors the native Camera screen. Picture settings are
          opened with the camera button at the lower left. -->
     <TextView
+        android:id="@+id/settings_button"
         android:layout_width="58dp"
         android:layout_height="58dp"
         android:layout_gravity="end|top"
         android:layout_marginEnd="14dp"
         android:layout_marginTop="10dp"
         android:background="@drawable/native_pro_badge_background"
+        android:clickable="true"
+        android:contentDescription="@string/open_settings"
+        android:focusable="true"
         android:gravity="center"
         android:text="@string/pro_badge"
         android:textColor="#D9FFFFFF"

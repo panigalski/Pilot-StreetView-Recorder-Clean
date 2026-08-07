@@ -19,6 +19,11 @@ public final class RecorderPreferences {
     private static final String KEY_WHITE_BALANCE = "picture_white_balance";
     private static final String KEY_AWB_LOCK = "picture_awb_lock";
     private static final String KEY_STITCHING_DISTANCE = "picture_stitching_distance";
+    private static final String KEY_TEMPERATURE_SOUND_THRESHOLD = "temperature_sound_threshold_c";
+
+    public static final int DEFAULT_TEMPERATURE_SOUND_THRESHOLD_C = 80;
+    public static final int MIN_TEMPERATURE_SOUND_THRESHOLD_C = 60;
+    public static final int MAX_TEMPERATURE_SOUND_THRESHOLD_C = 95;
 
     private RecorderPreferences() {
     }
@@ -84,6 +89,19 @@ public final class RecorderPreferences {
 
     public static void setStitchingDistance(Context context, int value) {
         preferences(context).edit().putInt(KEY_STITCHING_DISTANCE, value).apply();
+    }
+
+    public static int getTemperatureSoundThreshold(Context context) {
+        int value = preferences(context).getInt(
+                KEY_TEMPERATURE_SOUND_THRESHOLD, DEFAULT_TEMPERATURE_SOUND_THRESHOLD_C);
+        return Math.max(MIN_TEMPERATURE_SOUND_THRESHOLD_C,
+                Math.min(MAX_TEMPERATURE_SOUND_THRESHOLD_C, value));
+    }
+
+    public static void setTemperatureSoundThreshold(Context context, int value) {
+        int clamped = Math.max(MIN_TEMPERATURE_SOUND_THRESHOLD_C,
+                Math.min(MAX_TEMPERATURE_SOUND_THRESHOLD_C, value));
+        preferences(context).edit().putInt(KEY_TEMPERATURE_SOUND_THRESHOLD, clamped).apply();
     }
 
     public static void resetPictureAdjustments(Context context) {

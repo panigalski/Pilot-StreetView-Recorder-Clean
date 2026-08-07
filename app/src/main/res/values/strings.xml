@@ -81,4 +81,19 @@
     <string name="picture_defaults_restored">Picture defaults restored</string>
     <string name="picture_apply_failed">Unable to apply picture settings</string>
     <string name="pro_badge">Pro</string>
+
+    <string name="settings_temperature_warning">Temperature Warning</string>
+    <string name="temperature_sound_settings_title">Temperature Warning Sound</string>
+    <string name="temperature_sound_threshold_value">%1$d°C</string>
+    <string name="temperature_sound_threshold_hint">Play a warning tone when the CPU temperature reaches this threshold. The tone is re-armed only after temperature falls at least 3°C below the threshold.</string>
+    <string name="temperature_sound_threshold_range">Range: %1$d°C – %2$d°C</string>
+    <string name="temperature_sound_save">Save</string>
+    <string name="temperature_sound_test">Test Sound</string>
+    <string name="temperature_sound_threshold_saved">Temperature warning set to %1$d°C</string>
+    <string name="stop_recording_before_settings">Stop recording before changing settings.</string>
+
+    <string name="temperature_hot_title">Camera temperature high</string>
+    <string name="temperature_hot_message">Pilot is hot (%1$d°C). Connect the heatsink or improve cooling. Otherwise, the recording frame rate may drop.</string>
+    <string name="temperature_critical_title">Camera very hot</string>
+    <string name="temperature_critical_message">Pilot temperature has reached %1$d°C. Improve cooling immediately. Recording continues, matching the original Camera app behavior, but performance may drop.</string>
 </resources>

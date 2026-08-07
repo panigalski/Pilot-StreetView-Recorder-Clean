@@ -14,6 +14,8 @@ REQUIRED = [
     'app/build.gradle',
     'app/src/main/AndroidManifest.xml',
     'app/src/main/java/com/panigalski/pilotstreetview/MainActivity.java',
+    'app/src/main/java/com/panigalski/pilotstreetview/TemperatureSettingsDialog.java',
+    'app/src/main/java/com/panigalski/pilotstreetview/TemperatureAlarmSound.java',
     'app/src/main/java/com/panigalski/pilotstreetview/SettingsDialog.java',
     'app/src/main/java/com/panigalski/pilotstreetview/StorageSelectionDialog.java',
     'app/src/main/java/com/panigalski/pilotstreetview/StorageResolver.java',
@@ -49,6 +51,9 @@ if 'StorageSelectionDialog.show' not in main_source:
     sys.exit(1)
 if 'PictureAdjustmentsDialog.show' not in main_source:
     print('Direct picture-adjustment button hook is missing.')
+    sys.exit(1)
+if 'SettingsDialog.show' not in main_source or 'TemperatureAlarmSound.play' not in main_source:
+    print('Temperature settings/alarm hook is missing.')
     sys.exit(1)
 
 camera_source = (ROOT / 'pano/src/main/java/com/pi/pano/CameraSurfaceView.java').read_text(encoding='utf-8')
